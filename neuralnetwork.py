@@ -2,32 +2,30 @@ import torch
 
 class PyTorchNN(torch.nn.Module):
     
-    def __init__(self, n_inputs, network, n_outputs, relu):
+    def __init__(self, n_inputs, network, n_outputs, relu=False):
         super(PyTorchNN, self).__init__()
-        self.hidden1 = torch.nn.Linear(n_inputs, network[0])
-        self.hidden2 = torch.nn.Linear(network[0], network[1])
-        self.hidden3 = torch.nn.Linear(network[1], network[2])
-        self.nonlinear = torch.nn.Tanh() if not relu else torch.nn.ReLU()
-        self.output = torch.nn.Linear(network[-1], n_outputs)
+        network_layers = [torch.nn.Linear(n_inputs, network[0])]
+        if len(network) > 1:
+            network_layers.append(torch.nn.Tanh() if not relu else torch.nn.ReLU())
+            for i in range(len(network)-1):
+                network_layers.append(torch.nn.Linear(network[i], network[i+1]))
+                network_layers.append(torch.nn.Tanh() if not relu else torch.nn.ReLU())
+        network_layers.append(torch.nn.Linear(network[-1], n_outputs))
+        #print(network_layers)
+        self.model = torch.nn.Sequential(*network_layers)
         self.Xmeans = None
         self.Tmeans = None
     
     def forward(self, X):
-        out = self.hidden1(X)
-        out = self.nonlinear(out)
-        out = self.hidden2(out)
-        out = self.nonlinear(out)
-        out = self.hidden3(out)
-        out = self.nonlinear(out)
-        out = self.output(out)
+        out = self.model(X)
         return out
         
-    def train_pytorch(self, X, T, learning_rate, n_iterations, use_SGD):
+    def train_pytorch(self, X, T, learning_rate, n_iterations, use_SGD=False):
         if self.Xmeans is None:
             self.Xmeans = X.mean(dim=0)
         if self.Tmeans is None:
             self.Tmeans = T.mean(dim=0)
-        optimizer = torch.optim.Adam(self.parameters(), lr=learning_rate) if not use_SGD else torch.optim.SGD(torchnn.parameters(), lr=learning_rate)
+        optimizer = torch.optim.Adam(self.parameters(), lr=learning_rate) if not use_SGD else torch.optim.SGD(self.parameters(), lr=learning_rate)
         loss_func = torch.nn.MSELoss()
         errors = []
         for iteration in range(n_iterations):
