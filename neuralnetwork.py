@@ -11,14 +11,12 @@ class PyTorchNN(torch.nn.Module):
                 network_layers.append(torch.nn.Linear(network[i], network[i+1]))
                 network_layers.append(torch.nn.Tanh() if not relu else torch.nn.ReLU())
         network_layers.append(torch.nn.Linear(network[-1], n_outputs))
-        #print(network_layers)
         self.model = torch.nn.Sequential(*network_layers)
         self.Xmeans = None
         self.Tmeans = None
     
     def forward(self, X):
-        out = self.model(X)
-        return out
+        return self.model(X) # Output of forward pass is passing data through the model
         
     def train_pytorch(self, X, T, learning_rate, n_iterations, use_SGD=False):
         if self.Xmeans is None:
@@ -41,5 +39,4 @@ class PyTorchNN(torch.nn.Module):
     
     def use_pytorch(self, X):
         with torch.no_grad():
-            Y = self(X).cpu().numpy() if torch.cuda.is_available() else self(X).numpy()
-            return Y
+            return self(X).cpu().numpy() if torch.cuda.is_available() else self(X).numpy() # Returning Y
