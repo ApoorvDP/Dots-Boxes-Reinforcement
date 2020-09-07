@@ -1,13 +1,5 @@
-#---------#
-# Imports #
-#---------#
-
 from copy import copy
 import numpy as np
-
-#-----------#
-# Functions #
-#-----------#
 
 def print_game(state):
     for i in range(4):
