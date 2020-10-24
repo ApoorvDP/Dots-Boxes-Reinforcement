@@ -1,4 +1,3 @@
-import time
 import torch
 from torch.autograd import Variable
 
@@ -35,12 +34,11 @@ class NN(torch.nn.Module):
     def forward(self, X):
         return self.model(X) # Output of forward pass is passing data through the model
     
-    def train_pytorch(self, X, T, n_games, batch_size, learning_rate=10**-3, use_SGD=False, verbose=False):
-        start_time = time.time()
+    def train_pytorch(self, X, T, n_reps, batch_size, learning_rate=10**-3, use_SGD=False, verbose=False):
         X, T = self.process(X, T)
         optimizer, loss_func = torch.optim.Adam(self.parameters(), lr=learning_rate) if not use_SGD else torch.optim.SGD(self.parameters(), lr=learning_rate, momentum=0.7, nesterov=True), torch.nn.MSELoss()
         errors, n_examples = [], X.shape[0]
-        for i in range(n_games):
+        for i in range(n_reps):
             n_batches = n_examples//batch_size
             for j in range(n_batches):
                 start, end = j*batch_size, (j+1)*batch_size
@@ -54,8 +52,7 @@ class NN(torch.nn.Module):
                 optimizer.step()
             errors.append(torch.sqrt(loss.clone().detach())) # Detach Loss to garbage collect it; error at end of iteration
             if verbose:
-                print(f'Iteration {i+1} done; error: {round(errors[-1], 8)}')
-        self.time = time.time()-start_time
+                print(f'Iteration {i+1}, Error: {round(errors[-1], 4)}')
         return self, errors
     
     def use_pytorch(self, X):
