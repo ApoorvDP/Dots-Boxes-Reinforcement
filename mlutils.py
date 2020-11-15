@@ -1,5 +1,4 @@
-import numpy as np
-import random
+import numpy as np, random
 
 def partition(X, T=None, frac=0.8, by_column=0):
     if X is None or X.shape[0] == 0:
@@ -13,11 +12,7 @@ def partition(X, T=None, frac=0.8, by_column=0):
         X = X.T
         if T is not None:
             T = T.T
-    rand = np.array(sorted(random.sample(range(X.shape[0]), int(X.shape[0]*frac))))
-    mask = np.ones(X.shape[0], dtype=bool)
+    mask, rand = np.ones(X.shape[0], dtype=bool), np.array(sorted(random.sample(range(X.shape[0]), int(X.shape[0]*frac))))
     mask[rand] = False
     comp = np.arange(0, X.shape[0])[mask]
-    if T is None:
-        return X[rand], X[comp]
-    else:
-        return X[rand], X[comp], T[rand], T[comp]
+    return X[rand], X[comp] if T is None else X[rand], X[comp], T[rand], T[comp]
