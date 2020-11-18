@@ -11,23 +11,22 @@ def epsilon_greedy(state, valid_moves_F, Qnet, epsilon, turn):
     if np.random.uniform() < epsilon: # Random move
         #move = moves[random.sample(range(len(moves)), 1)[0]] if turn else moves[0] # Dumb opponent
         move = moves[random.sample(range(len(moves)), 1)[0]] # Random opponent
-        Q = Qnet.use_pytorch(np.array(state + move_to_onehot(move)))[0] if Qnet.processed is True else 0
     else: # Greedy move
         Qs = [Qnet.use_pytorch(np.array(state + move_to_onehot(m)))[0] if Qnet.processed is True else 0 for m in moves] # Q values for deciding greedy move
         #move = moves[np.argmax(Qs)] if turn else moves[0] # Dumb opponent
         move = moves[np.argmax(Qs)] if turn else moves[random.sample(range(len(moves)), 1)[0]] # Random opponent
-        Q = np.max(Qs) if turn else Qs[0]
-    return move, Q
+    #Q = Qnet.use_pytorch(np.array(state + move_to_onehot(move)))[0] if Qnet.processed is True else 0
+    return move, Qnet.use_pytorch(np.array(state + move_to_onehot(move)))[0] if Qnet.processed is True else 0
 
-def train_Qnet(valid_moves_F, make_move_F, boxes_created_F, n_epochs, n_reps_per_epoch, network, n_trains, learning_rate, min_epsilon, epsilon_decay_factor, use_ReLU=False, use_SGD=False, verbose=False):
-    Qnet, outcomes = nn.NN(False, 48, network, 1, use_ReLU), np.zeros(n_epochs*n_reps_per_epoch)
+def train_Qnet(valid_moves_F, make_move_F, boxes_created_F, parameters, use_ReLU=False, verbose=False):
+    Qnet, outcomes = nn.NN(False, 48, parameters['network'], 1, use_ReLU), np.zeros(parameters['n_epochs']*parameters['n_reps_per_epoch'])
     repk, epsilon = -1, 1 # Degree of randomness of move as a fraction => initially 1, i.e. 100% random move
-    for epoch in range(n_epochs):
+    for epoch in range(parameters['n_epochs']):
         if epoch > 0:
-            epsilon *= epsilon_decay_factor
-            epsilon = max(min_epsilon, epsilon) # Minimum probability of a random move is min_epsilon
+            epsilon *= parameters['epsilon_decay_factor']
+            epsilon = max(parameters['min_epsilon'], epsilon) # Minimum probability of a random move is min_epsilon
         samples = []
-        for reps in range(n_reps_per_epoch):
+        for reps in range(parameters['n_reps_per_epoch']):
             repk += 1
             # Initialize game
             state, boxes, score, done = [0]*24, [0]*9, [0]*2, False
@@ -59,9 +58,9 @@ def train_Qnet(valid_moves_F, make_move_F, boxes_created_F, n_epochs, n_reps_per
                 state, move = state_next, move_next
         samples = np.array(samples) # Samples contains the training inputs and the targets
         X, T = samples[:, :48], samples[:, 48:49]+samples[:, 49:50] # Training inputs and target values for the neural network
-        Qnet, _ = Qnet.train_pytorch(X, T, n_trains, X.shape[0], learning_rate, use_SGD) # Training the neural network
+        Qnet, _ = Qnet.train_pytorch(X, T, parameters['n_trains'], X.shape[0], parameters['learning_rate'], parameters['use_SGD']) # Training the neural network
         if verbose:
-            print(f'(Epoch: {epoch+1}, Mean Outcome: {outcomes.reshape(-1, n_reps_per_epoch)[epoch, :].mean():.2f}, Epsilon: {epsilon:.2f})')
+            print(f'(Epoch: {epoch+1}, Mean Outcome: {outcomes.reshape(-1, parameters["n_reps_per_epoch"])[epoch, :].mean():.2f}, Epsilon: {epsilon:.2f})')
     return Qnet, outcomes
 
 def compute_results(n_epochs, outcomes, bin_size):
@@ -93,14 +92,14 @@ def compute_epsilons(n_epochs, min_epsilon, epsilon_decay_factor):
 def plot_epsilons(experiment_no, epsilons, min_epsilon, results_path):
     plt.figure(figsize=(12, 9))
     plt.gca().set(title='Epsilons', xlabel='Epoch', ylabel='% chance of a random move')
-    plt.plot(100*epsilons)
-    plt.axhline(y=100*min_epsilon, color='r', linestyle='--') # Plotting minimum randomness visual threshold
+    plt.plot(epsilons)
+    plt.axhline(y=min_epsilon, color='r', linestyle='--') # Plotting minimum randomness visual threshold
     plt.savefig(os.path.join(results_path, f'{experiment_no}. Epsilons.png'))
     return
 
-def plot_wins(experiment_no, win_rates, bin_size, results_path):
+def plot_wins(experiment_no, runs, win_rates, parameters, bin_size, results_path):
     plt.figure(figsize=(12, 9))
-    plt.gca().set(title='Wins', xlabel='Epoch', ylabel='Win % Range', ylim=(50, 100)) # Set standard range for y
+    plt.gca().set(title=f'Parameters: {parameters}\nRuns: {runs}', xlabel='Epoch', ylabel='Win % Range', ylim=(50, 100)) # Set standard range for y
     plt.plot(range(bin_size, bin_size+win_rates.shape[1]), np.mean(win_rates, axis=0)) # Plotting win rate averaged over 5 runs
     plt.fill_between(range(bin_size, bin_size+win_rates.shape[1]), np.min(win_rates, axis=0), np.max(win_rates, axis=0), color='orange', alpha=0.3) # Plotting minimum and maximum values for individual runs
     plt.savefig(os.path.join(results_path, f'{experiment_no}. Wins.png'))
@@ -118,36 +117,27 @@ if __name__ == "__main__":
     experiment_no, results_path, runs, bin_size = int(sys.argv[1]), os.getcwd()+'/Results', 5, 10
     
     # Parameters
-    n_epochs = [50]
-    n_reps_per_epoch = [50]
-    networks = [[50, 50]]
-    n_trains = [25]
-    learning_rates = [10**-3]
-    min_epsilons = [0.05]
-    epsilon_decay_factors = [0.92]
-    use_SGD = True
+    parameters = {'n_epochs': 50, 'n_reps_per_epoch': 200, 'network': [100, 100], 'n_trains': 100, 'learning_rate': 0.001, 'min_epsilon': 0.02, 'epsilon_decay_factor': 0.92, 'use_ReLU': False, 'use_SGD': True}
     
     # Q-learning
     if not reuse: # Training
-        for i in range(len(n_epochs)): # Index to choose a set of parameters
-            win_rates = []
-            for j in range(runs): # Multiple runs for a set of parameters
-                pickle.dump({'experiment_no': experiment_no, 'results_path': results_path, 'runs': runs, 'bin_size': bin_size}, open(os.path.join(results_path, f'{experiment_no}. Metadata.meta'), 'wb')) # Save metadata
-                print(f'Training => Parameter set: {i+1}, Run: {j+1}')
-                start_time = time.time()
-                Qnet, outcomes = train_Qnet(g.valid_moves, g.make_move, g.box_created, n_epochs[i], n_reps_per_epoch[i], networks[i], n_trains[i], learning_rates[i], min_epsilons[i], epsilon_decay_factors[i], use_SGD)
-                train_time = round(time.time()-start_time, 2)
-                print(f'Trained => Time to train: {train_time} seconds')
-                pickle.dump({'n_epochs': n_epochs[i], 'n_reps_per_epoch': n_reps_per_epoch[i], 'network': networks[i], 'n_trains': n_trains[i], 'learning_rate': learning_rates[i], 'min_epsilon': min_epsilons[i], 'epsilon_decay_factor': epsilon_decay_factors[i], 'use_SGD': use_SGD}, open(os.path.join(results_path, f'{experiment_no}. Parameters.pth'), 'wb')) # Save parameters
-                pickle.dump(Qnet, open(os.path.join(results_path, f'{experiment_no}. Qnet - Run {j+1}.pt'), 'wb')) # Save network (with weights)
-                win_rate = compute_results(n_epochs[i], outcomes, bin_size)[bin_size:]
-                plot_results(experiment_no, j+1, win_rate, bin_size, results_path)
-                epsilons = compute_epsilons(n_epochs[i], min_epsilons[i], epsilon_decay_factors[i])
-                plot_epsilons(experiment_no, epsilons, min_epsilons[i], results_path)
-                pickle.dump({'train_time': train_time, 'win_rate': win_rate, 'epsilons': epsilons}, open(os.path.join(results_path, f'{experiment_no}. Outputs - Run {j+1}.pth'), 'wb')) # Save outputs
-                win_rates.append(win_rate)
-            plot_wins(experiment_no, np.array(win_rates).reshape(runs, -1), bin_size, results_path)
-            experiment_no += 1
+        win_rates = []
+        for i in range(runs): # Multiple runs for a set of parameters
+            pickle.dump({'runs': runs, 'bin_size': bin_size}, open(os.path.join(results_path, f'{experiment_no}. Metadata.meta'), 'wb')) # Save metadata
+            print(f'Training => Run: {i+1}')
+            start_time = time.time()
+            Qnet, outcomes = train_Qnet(g.valid_moves, g.make_move, g.box_created, parameters, verbose=True)
+            train_time = round(time.time()-start_time, 2)
+            print(f'Trained => Time to train: {train_time} seconds')
+            pickle.dump(parameters, open(os.path.join(results_path, f'{experiment_no}. Parameters.pth'), 'wb')) # Save parameters
+            pickle.dump(Qnet, open(os.path.join(results_path, f'{experiment_no}. Qnet - Run {i+1}.pt'), 'wb')) # Save network
+            win_rate = compute_results(parameters['n_epochs'], outcomes, bin_size)[bin_size:]
+            plot_results(experiment_no, i+1, win_rate, bin_size, results_path)
+            epsilons = compute_epsilons(parameters['n_epochs'], parameters['min_epsilon'], parameters['epsilon_decay_factor'])
+            plot_epsilons(experiment_no, epsilons, parameters['min_epsilon'], results_path)
+            pickle.dump({'train_time': train_time, 'win_rate': win_rate, 'epsilons': epsilons}, open(os.path.join(results_path, f'{experiment_no}. Outputs - Run {i+1}.pth'), 'wb')) # Save outputs
+            win_rates.append(win_rate)
+        plot_wins(experiment_no, runs, np.array(win_rates).reshape(runs, -1), parameters, bin_size, results_path)
     else: # Testing
         pass # Reuse to be coded
     
