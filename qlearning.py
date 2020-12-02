@@ -15,16 +15,15 @@ def epsilon_greedy(state, valid_moves_F, Qnet, epsilon, turn):
         Qs = [Qnet.use_pytorch(np.array(state + move_to_onehot(m)))[0] if Qnet.processed is True else 0 for m in moves] # Q values for deciding greedy move
         #move = moves[np.argmax(Qs)] if turn else moves[0] # Dumb opponent
         move = moves[np.argmax(Qs)] if turn else moves[random.sample(range(len(moves)), 1)[0]] # Random opponent
-    #Q = Qnet.use_pytorch(np.array(state + move_to_onehot(move)))[0] if Qnet.processed is True else 0
     return move, Qnet.use_pytorch(np.array(state + move_to_onehot(move)))[0] if Qnet.processed is True else 0
 
 def train_Qnet(valid_moves_F, make_move_F, boxes_created_F, parameters, use_ReLU=False, verbose=False):
     Qnet, outcomes = nn.NN(False, 48, parameters['network'], 1, use_ReLU), np.zeros(parameters['n_epochs']*parameters['n_reps_per_epoch'])
-    repk, epsilon = -1, 1 # Degree of randomness of move as a fraction => initially 1, i.e. 100% random move
+    repk, ep = -1, 1 # Degree of randomness of move as a fraction => initially 1, i.e. 100% random move
     for epoch in range(parameters['n_epochs']):
         if epoch > 0:
-            epsilon *= parameters['epsilon_decay_factor']
-            epsilon = max(parameters['min_epsilon'], epsilon) # Minimum probability of a random move is min_epsilon
+            ep *= parameters['epsilon_decay_factor']
+        epsilon = max(parameters['min_epsilon'], ep) # Minimum probability of a random move is min_epsilon
         samples = []
         for reps in range(parameters['n_reps_per_epoch']):
             repk += 1
@@ -63,6 +62,41 @@ def train_Qnet(valid_moves_F, make_move_F, boxes_created_F, parameters, use_ReLU
             print(f'(Epoch: {epoch+1}, Mean Outcome: {outcomes.reshape(-1, parameters["n_reps_per_epoch"])[epoch, :].mean():.2f}, Epsilon: {epsilon:.2f})')
     return Qnet, outcomes
 
+def test_Qnet(valid_moves_F, make_move_F, boxes_created_F, num_tests, runs, num_games, Qnet, verbose=False):
+    testing = []
+    for i in range(num_tests):
+        print(f'Testing => Test {i+1}')
+        percentages = []
+        for j in range(runs):
+            outcomes = []
+            for k in range(num_games):
+                state, boxes, score, done = [0]*24, [0]*9, [0]*2, False
+                turn = True
+                move, _ = epsilon_greedy(state, valid_moves_F, Qnet, 0, turn)
+                while not done:
+                    state_next = make_move_F(state, move)
+                    created, boxes = boxes_created_F(state_next, boxes)
+                    if created > 0:
+                        if turn:
+                            score[0] += created
+                        else:
+                            score[1] += created
+                    else:
+                        turn = not turn
+                    if 0 not in state_next:
+                        r = 1 if score[0] > score[1] else -1
+                        outcome, done = r, True
+                        move_next, Qnext = -1, 0
+                    else:
+                        move_next, Qnext = epsilon_greedy(state_next, valid_moves_F, Qnet, 0, turn)
+                    state, move = state_next, move_next
+                outcomes.append(outcome)
+            percentages.append(sum(outcomes[k] == 1 for k in range(len(outcomes)))/num_games*100)
+        testing.append(sum(percentages)/runs)
+        if verbose:
+            print(f'Finished test {i+1}; Percent: {testing[-1]}')
+    return testing
+
 def compute_results(n_epochs, outcomes, bin_size):
     temp, x = outcomes.reshape(n_epochs, -1), []
     for i in range(temp.shape[0]):
@@ -82,16 +116,17 @@ def plot_results(experiment_no, run, win_rate, bin_size, results_path):
     return
 
 def compute_epsilons(n_epochs, min_epsilon, epsilon_decay_factor):
-    epsilons, epsilon = [], 1
+    epsilons, ep = [], 1
     for epoch in range(n_epochs):
-        epsilon *= epsilon_decay_factor
-        epsilon = max(min_epsilon, epsilon)
+        if epoch > 0:
+            ep *= epsilon_decay_factor
+        epsilon = max(min_epsilon, ep)
         epsilons.append(epsilon) # Storing epsilons
     return epsilons
 
 def plot_epsilons(experiment_no, epsilons, min_epsilon, results_path):
     plt.figure(figsize=(12, 9))
-    plt.gca().set(title='Epsilons', xlabel='Epoch', ylabel='% chance of a random move')
+    plt.gca().set(title='Epsilons', xlabel='Epoch', ylabel='Epsilon', ylim=(0, 1))
     plt.plot(epsilons)
     plt.axhline(y=min_epsilon, color='r', linestyle='--') # Plotting minimum randomness visual threshold
     plt.savefig(os.path.join(results_path, f'{experiment_no}. Epsilons.png'))
@@ -99,10 +134,18 @@ def plot_epsilons(experiment_no, epsilons, min_epsilon, results_path):
 
 def plot_wins(experiment_no, runs, win_rates, parameters, bin_size, results_path):
     plt.figure(figsize=(12, 9))
-    plt.gca().set(title=f'Parameters: {parameters}\nRuns: {runs}', xlabel='Epoch', ylabel='Win % Range', ylim=(50, 100)) # Set standard range for y
+    params = '\n'.join([str(k)+': '+(str(v)) for (k, v) in parameters.items()])
+    plt.gca().set(title=f'Parameters\n{params[:len(params)//2+1]}\n{params[len(params)//2+1:]}\n\nRuns: {runs}\n', xlabel='Epoch', ylabel='Win % Range', ylim=(50, 100)) # Set standard range for y
     plt.plot(range(bin_size, bin_size+win_rates.shape[1]), np.mean(win_rates, axis=0)) # Plotting win rate averaged over 5 runs
     plt.fill_between(range(bin_size, bin_size+win_rates.shape[1]), np.min(win_rates, axis=0), np.max(win_rates, axis=0), color='orange', alpha=0.3) # Plotting minimum and maximum values for individual runs
     plt.savefig(os.path.join(results_path, f'{experiment_no}. Wins.png'))
+    return
+
+def plot_testing(results_path, testing_results):
+    plt.figure(figsize=(12, 9))
+    plt.gca().set(title='Testing Results', xlabel='Test no.', ylabel='Win %', ylim=(50, 100))
+    plt.plot(range(1, 1+len(testing_results)), testing_results)
+    plt.savefig(os.path.join(results_path, 'Testing.png'))
     return
 
 if __name__ == "__main__":
@@ -110,17 +153,13 @@ if __name__ == "__main__":
     import sys, os, time, pickle
     import game as g
     
-    # Control flags
-    reuse, store, play = False, True, False
-    
-    # Metadata
-    experiment_no, results_path, runs, bin_size = int(sys.argv[1]), os.getcwd()+'/Results', 5, 10
-    
-    # Parameters
-    parameters = {'n_epochs': 50, 'n_reps_per_epoch': 200, 'network': [100, 100], 'n_trains': 100, 'learning_rate': 0.001, 'min_epsilon': 0.02, 'epsilon_decay_factor': 0.92, 'use_ReLU': False, 'use_SGD': True}
+    # Controls
+    results_path, train, play = os.getcwd()+'/Results', False, False
     
     # Q-learning
-    if not reuse: # Training
+    if train: # Training
+        experiment_no, runs, bin_size = int(sys.argv[1]), 5, 10 # Meta parameters
+        parameters = {'n_epochs': 500, 'n_reps_per_epoch': 800, 'network': [100, 100], 'n_trains': 50, 'learning_rate': 0.001, 'min_epsilon': 0.05, 'epsilon_decay_factor': 0.9925, 'use_ReLU': False, 'use_SGD': True} # Parameters
         win_rates = []
         for i in range(runs): # Multiple runs for a set of parameters
             pickle.dump({'runs': runs, 'bin_size': bin_size}, open(os.path.join(results_path, f'{experiment_no}. Metadata.meta'), 'wb')) # Save metadata
@@ -139,8 +178,18 @@ if __name__ == "__main__":
             win_rates.append(win_rate)
         plot_wins(experiment_no, runs, np.array(win_rates).reshape(runs, -1), parameters, bin_size, results_path)
     else: # Testing
-        pass # Reuse to be coded
+        num_tests, runs, num_games = 10, 5, 100 # Meta parameters
+        with (open(os.path.join(results_path, 'Metadata_best.meta'), 'rb')) as meta_file, (open(os.path.join(results_path, 'Parameters_best.pth'), 'rb')) as params_file, (open(os.path.join(results_path, 'Qnet_best.pt'), 'rb')) as Qnet_file, (open(os.path.join(results_path, 'Outputs_best.pth'), 'rb')) as output_file: # Read from stored files
+            while True:
+                try:
+                    meta_best, parameters_best, Qnet_best, output_best = pickle.load(meta_file), pickle.load(params_file), pickle.load(Qnet_file), pickle.load(output_file)
+                except EOFError:
+                    break
+        meta_file.close(), params_file.close(), Qnet_file.close(), output_file.close()
+        testing_results = test_Qnet(g.valid_moves, g.make_move, g.box_created, num_tests, runs, num_games, Qnet_best, verbose=True)
+        plot_testing(results_path, testing_results)
     
     # Interactive game
     if play:
         pass #g.play_game() # Starting game
+
