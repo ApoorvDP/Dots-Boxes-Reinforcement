@@ -1,5 +1,10 @@
 import numpy as np, random
 
+def move_to_onehot_24(move):
+    onehot_move = [0]*24
+    onehot_move[move] = 1
+    return onehot_move
+
 def partition(X, T=None, frac=0.8, by_column=0):
     if X is None or X.shape[0] == 0:
         print('Incorrect X input.')

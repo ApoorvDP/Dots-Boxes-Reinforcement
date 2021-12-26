@@ -1,6 +1,14 @@
 from copy import copy
 import numpy as np
 
+def boxes_edges_index_generate():
+    boxes_edges_index, c = [], 0
+    for i in range(0, 9, 3):
+        for j in range(3):
+            boxes_edges_index.append([(i+j), (i+j+12)+c, (i+j+13)+c, (i+j+3)])
+        c += 1
+    return boxes_edges_index
+
 def print_game(state):
     for i in range(4):
         for j in range(4):
