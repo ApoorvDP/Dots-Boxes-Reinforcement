@@ -1,11 +1,11 @@
 {
-    "epochs": 400,
-    "games_per_epoch": 200,
+    "epochs": 1000,
+    "games_per_epoch": 1000,
     "network": [100, 100],
-    "updates_per_epoch": 100,
+    "updates_per_epoch": 25,
     "learning_rate": 0.0001,
     "use_ReLU": false,
     "use_SGD": true,
-    "epsilon_decay_factor": 0.9875,
+    "epsilon_decay_factor": 0.995,
     "min_epsilon": 0.01
 }
