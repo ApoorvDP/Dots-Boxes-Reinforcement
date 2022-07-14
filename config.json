@@ -1,4 +1,5 @@
 {
+    "board": 3,
     "train": true,
     "adversary": false,
     "play": false

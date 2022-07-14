@@ -40,7 +40,7 @@ def epsilon_greedy(state, valid_moves_F, Qnet, Qnet_adv, epsilon, turn):
     return move, np.argmax(Qs) if not turn else 0 # 0 because don't care about opponent's Q value prediction
 
 def train_Qnet(epsilon_greedy_F, valid_moves_F, make_move_F, boxes_created_F, parameters, Qnet_adv, ep=1, verbose=False):
-    Qnet = nn.FCNN(False, 48, parameters['network'], 1, parameters['use_ReLU'])
+    Qnet = nn.FCNN(False, parameters['inputs'], parameters['network'], parameters['outputs'], parameters['use_ReLU'])
     outcomes, repk = np.zeros(parameters['epochs']*parameters['games_per_epoch']), -1
     for epoch in range(parameters['epochs']):
         start_time = time.time()
@@ -153,7 +153,7 @@ def plot_epsilons(results_path, experiment_no, epsilons, min_epsilon):
 
 def plot_wins(results_path, experiment_no, runs, win_rates, parameters, bin_size):
     plt.figure(figsize=(10, 8))
-    plt.gca().set(title=f'Parameters: {str(list(parameters.items())[:len(list(parameters.items()))//2])}\n{str(list(parameters.items())[len(list(parameters.items()))//2:])}\nRuns: {runs}\n', xlabel='Epoch', ylabel='Win % Range', ylim=(50, 100)) # Set standard range for y
+    plt.gca().set(title=f'Parameters: {str(list(parameters.items())[:len(list(parameters.items()))//3])}\n{str(list(parameters.items())[len(list(parameters.items()))//3:(2*len(list(parameters.items())))//3])}\n{str(list(parameters.items())[(2*len(list(parameters.items())))//3:])}\nRuns: {runs}\n', xlabel='Epoch', ylabel='Win % Range', ylim=(50, 100)) # Set standard range for y
     plt.plot(range(bin_size, bin_size+win_rates.shape[1]), np.mean(win_rates, axis=0)) # Plotting win rate averaged over 5 runs
     plt.fill_between(range(bin_size, bin_size+win_rates.shape[1]), np.min(win_rates, axis=0), np.max(win_rates, axis=0), color='orange', alpha=0.3) # Plotting minimum and maximum values for individual runs
     plt.savefig(os.path.join(results_path, f'{experiment_no}. Wins.png'))
@@ -185,9 +185,10 @@ if __name__ == "__main__":
         experiment_no, runs, bin_size = int(sys.argv[1]), 5, 10 # Meta parameters
         with open('parameters.json') as f:
             parameters = json.load(f) # Parameters
+            parameters['inputs'], parameters['outputs'] = 4*(2*config['board']*(config['board']-1)), 1 # Edges in board: 2n(n-1)
         win_rates = []
         for i in range(runs): # Multiple runs for a set of parameters
-            pickle.dump({'runs': runs, 'bin_size': bin_size}, open(os.path.join(results_path, f'{experiment_no}. Metadata.meta'), 'wb')) # Save metadata
+            pickle.dump({'inputs': parameters['inputs'], 'outputs': parameters['outputs'], 'runs': runs, 'bin_size': bin_size}, open(os.path.join(results_path, f'{experiment_no}. Metadata.pth'), 'wb')) # Save metadata
             print(f'Training => Run: {i+1}')
             start_time = time.time()
             Qnet, outcomes = train_Qnet(epsilon_greedy, g.valid_moves, g.make_move, g.box_created, parameters, Qnet_adv, verbose=True)
