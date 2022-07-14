@@ -24,7 +24,7 @@ def get_move_heuristic(state, moves):
 
 def opponent_move(state, moves, Qnet):
     if Qnet is not None:
-        Qs = [Qnet.use_pytorch(np.array(state + ml.move_to_onehot_24(m)))[0] if Qnet.processed is True else 0 for m in moves] # Q values for Qnet_adv
+        Qs = [Qnet.evaluate(np.array(state + ml.move_to_onehot_24(m)))[0] if Qnet.processed is True else 0 for m in moves] # Q values for Qnet_adv
         move = moves[np.argmax(Qs)]
     else:
         move = get_move_heuristic(state, moves)
@@ -32,7 +32,7 @@ def opponent_move(state, moves, Qnet):
 
 def epsilon_greedy(state, valid_moves_F, Qnet, Qnet_adv, epsilon, turn):
     moves = valid_moves_F(state)
-    Qs = [Qnet.use_pytorch(np.array(state + ml.move_to_onehot_24(m)))[0] if Qnet.processed is True else 0 for m in moves] # Q values for Qnet
+    Qs = [Qnet.evaluate(np.array(state + ml.move_to_onehot_24(m)))[0] if Qnet.processed is True else 0 for m in moves] # Q values for Qnet
     if np.random.uniform() < epsilon: # Random move
         move = moves[random.sample(range(len(moves)), 1)[0]] if not turn else opponent_move(state, moves, Qnet_adv)
     else: # Greedy move
@@ -40,7 +40,7 @@ def epsilon_greedy(state, valid_moves_F, Qnet, Qnet_adv, epsilon, turn):
     return move, np.argmax(Qs) if not turn else 0 # 0 because don't care about opponent's Q value prediction
 
 def train_Qnet(epsilon_greedy_F, valid_moves_F, make_move_F, boxes_created_F, parameters, Qnet_adv, ep=1, verbose=False):
-    Qnet = nn.NN(False, 48, parameters['network'], 1, parameters['use_ReLU'])
+    Qnet = nn.FCNN(False, 48, parameters['network'], 1, parameters['use_ReLU'])
     outcomes, repk = np.zeros(parameters['epochs']*parameters['games_per_epoch']), -1
     for epoch in range(parameters['epochs']):
         start_time = time.time()
@@ -78,10 +78,11 @@ def train_Qnet(epsilon_greedy_F, valid_moves_F, make_move_F, boxes_created_F, pa
                 state, move = state_next, move_next
         samples = np.array(samples) # Samples contains the training inputs and the targets
         X, T = samples[:, :48], samples[:, 48:49]+samples[:, 49:50] # Training inputs and target values for the neural network
-        Qnet, _ = Qnet.train_pytorch(X, T, parameters['updates_per_epoch'], X.shape[0], parameters['learning_rate'], parameters['use_SGD']) # Training the neural network
+        Qnet, _ = Qnet.train(X, T, parameters['updates_per_epoch'], X.shape[0], parameters['learning_rate'], parameters['use_SGD']) # Training the neural network
         if verbose:
-            print(f'(Epoch: {epoch+1}, Win %: {(round(outcomes.reshape(-1, parameters["games_per_epoch"])[epoch, :].mean(), 2)+1)*100/2:.1f}, Epsilon: {epsilon:.2f}), Time taken: {time.time() - start_time:.2f}s')
-    return Qnet, outcomes
+            #print(f'(Epoch: {epoch+1}, Wins: {len(np.where(outcomes.reshape(-1, parameters["games_per_epoch"]) == 1)[0])}, Losses: {len(np.where(outcomes.reshape(-1, parameters["games_per_epoch"]) == -1)[0])}')
+            print(f'(Epoch: {epoch+1}, Win %: {(round(outcomes.reshape(-1, parameters["games_per_epoch"])[epoch, :].mean(), 4)+1)*100/2:.2f}, Epsilon: {epsilon:.2f}), Time taken: {time.time() - start_time:.2f}s')
+    return Qnet.before_save_model(), outcomes
 
 def test_Qnet(epsilon_greedy_F, valid_moves_F, make_move_F, boxes_created_F, num_tests, runs, num_games, Qnet, Qnet_adv, ep=0, verbose=False):
     testing = []
@@ -170,12 +171,12 @@ if __name__ == "__main__":
     # Controls
     with open('config.json') as f:
         config = json.load(f)
-    results_path, Qnet_adv = os.getcwd()+'/Results', None
+    results_path, adv_path, Qnet_adv = os.path.join(os.getcwd(), 'Results'), os.path.join(os.getcwd(), 'Adversaries'), None
     if config['adversary'] == True: # Load Q-network as adversary
-        with open('Qnet_adv.pt', 'rb') as f:
+        with open(os.path.join(adv_path, 'Qnet_adv.pt'), 'rb') as f:
             while True:
                 try:
-                    Qnet_adv = pickle.load(f)
+                    Qnet_adv = pickle.load(f).after_load_model()
                 except EOFError:
                     break
     
@@ -204,10 +205,10 @@ if __name__ == "__main__":
         plot_wins(results_path, experiment_no, runs, np.array(win_rates).reshape(runs, -1), parameters, bin_size)
     else: # Testing
         num_tests, runs, num_games = int(sys.argv[1]), 5, 100 # Meta parameters
-        with open('Qnet_best.pt', 'rb') as f:
+        with open(os.path.join(results_path, 'Qnet_best.pt'), 'rb') as f:
             while True:
                 try:
-                    Qnet_best = pickle.load(f)
+                    Qnet_best = pickle.load(f).after_load_model()
                 except EOFError:
                     break
         testing_results = test_Qnet(epsilon_greedy, g.valid_moves, g.make_move, g.box_created, num_tests, runs, num_games, Qnet_best, Qnet_adv, verbose=True)
