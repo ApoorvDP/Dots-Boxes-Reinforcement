@@ -41,6 +41,8 @@ def epsilon_greedy(state, valid_moves_F, Qnet, Qnet_adv, epsilon, turn):
 
 def train_Qnet(epsilon_greedy_F, valid_moves_F, make_move_F, boxes_created_F, parameters, Qnet_adv, ep=1, verbose=False):
     Qnet = nn.FCNN(False, parameters['inputs'], parameters['network'], parameters['outputs'], parameters['use_ReLU'])
+    if verbose:
+        print(f'Neural network\n{Qnet}\ncreated on {Qnet.device}.')
     outcomes, repk = np.zeros(parameters['epochs']*parameters['games_per_epoch']), -1
     for epoch in range(parameters['epochs']):
         start_time = time.time()

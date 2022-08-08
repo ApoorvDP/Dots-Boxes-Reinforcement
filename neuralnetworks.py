@@ -1,19 +1,23 @@
-import torch, abc
+import numpy as np, torch, abc
 
 class NN(torch.nn.Module, abc.ABC):
     
-    def __init__(self, standardize, n_inputs, network, n_outputs, relu=False):
+    #device = torch.device('cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() and torch.backends.mps.is_built() else 'cpu')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    def __init__(self, standardize, n_inputs, network, n_outputs, relu=False, classify=False):
         super().__init__()
-        self.standardize, self.processed, self.training_time = standardize, False, None
+        self.standardize, self.processed, self.training_time, self.classify = standardize, False, None, classify
         self.build_model(n_inputs, network, n_outputs, relu)
-        self.to(torch.device('cuda' if torch.cuda.is_available() else 'cpu')).double()
+        self.to(self.device).float()
+        return
     
     @abc.abstractmethod # Default model building class, override in child class
     def build_model(self, n_inputs, network, n_outputs, relu=False):
         pass # Customize depending on type of model
     
     def tensor(self, np_array): # Return tensor for Torch
-        return torch.from_numpy(np_array.astype('double')).cuda() if torch.cuda.is_available() else torch.from_numpy(np_array.astype('double'))
+        return torch.tensor(np_array, device=self.device, dtype=torch.float32)
     
     def standard(self, data, mean, sd):
         return (data-mean)/sd
@@ -33,7 +37,7 @@ class NN(torch.nn.Module, abc.ABC):
     
     def train(self, X, T, reps, batch_size, learning_rate=10**-3, use_SGD=False, verbose=False):
         X, T = self.process(X, T)
-        optimizer, loss_func = torch.optim.Adam(self.parameters(), lr=learning_rate) if not use_SGD else torch.optim.SGD(self.parameters(), lr=learning_rate, momentum=0.7, nesterov=True), torch.nn.MSELoss()
+        optimizer, loss_func = torch.optim.Adam(self.parameters(), lr=learning_rate) if not use_SGD else torch.optim.SGD(self.parameters(), lr=learning_rate, momentum=0.7, nesterov=True), torch.nn.MSELoss() if not self.classify else torch.nn.CrossEntropyLoss(reduction='mean')
         errors, examples = [], X.shape[0]
         for i in range(reps):
             batches = examples//batch_size
@@ -45,7 +49,7 @@ class NN(torch.nn.Module, abc.ABC):
                 loss = loss_func(outputs, T_batch)
                 loss.backward() # Backward and optimize
                 optimizer.step()
-            errors.append(torch.sqrt(loss.clone().detach())) # Detach Loss to garbage collect it; error at end of iteration
+            errors.append(torch.sqrt(loss.clone().detach()) if not self.classify else loss.clone().detach()) # Detach Loss to garbage collect it; error at end of iteration
             if verbose:
                 print(f'Iteration {i+1}, Error: {round(errors[-1], 4)}')
         return self, errors
@@ -53,28 +57,35 @@ class NN(torch.nn.Module, abc.ABC):
     def evaluate(self, X):
         X = self.tensor(X)
         with torch.no_grad():
-            return self(X).cpu().numpy() if torch.cuda.is_available() else self(X).numpy() # Return Y
+            Y = self(X).cpu().detach().numpy() if self.device != 'cpu' else self(X).detach().numpy()
+            if not self.classify: # If regression, return result as is, if classification process further
+                return Y
+            else:
+                return Y.argmax(axis=1), np.exp(Y) / np.sum(np.exp(Y), axis=1).reshape((-1, 1)) # Category, and its Probability as per model
     
-    def before_save_model(self):
-        return self.to(torch.device('cpu')).double()
+    def before_save_model(self): # Before saving model, move to 'cpu' so it can be loaded in safely
+        return self.to(torch.device('cpu')).float()
     
-    def after_load_model(self):
-        return self.to(torch.device('cuda' if torch.cuda.is_available() else 'cpu')).double()
+    def after_load_model(self): # After loading model, move it to best available device
+        return self.to(torch.device('cuda' if torch.cuda.is_available() else 'cpu')).float()#torch.device('cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() and torch.backends.mps.is_built() else 'cpu')).float()
     
 
 
 class FCNN(NN): # Fully-Connected Neural Network
     
     def build_model(self, n_inputs, network, n_outputs, relu=False):
-        network_layers = [torch.nn.Linear(n_inputs, network[0])]
-        if len(network) > 1:
-            network_layers.append(torch.nn.Tanh() if not relu else torch.nn.ReLU())
-            for i in range(len(network)-1):
-                network_layers.append(torch.nn.Linear(network[i], network[i+1]))
+        if not network:
+            self.model = torch.nn.Linear(n_inputs, n_outputs)
+        else:
+            network_layers = [torch.nn.Linear(n_inputs, network[0])]
+            if len(network) > 1:
                 network_layers.append(torch.nn.Tanh() if not relu else torch.nn.ReLU())
-        network_layers.append(torch.nn.Linear(network[-1], n_outputs))
-        self.model = torch.nn.Sequential(*network_layers)
-        #print(self.model)
+                for i in range(len(network)-1):
+                    network_layers.append(torch.nn.Linear(network[i], network[i+1]))
+                    network_layers.append(torch.nn.Tanh() if not relu else torch.nn.ReLU())
+            network_layers.append(torch.nn.Linear(network[-1], n_outputs))
+            self.model = torch.nn.Sequential(*network_layers)
+        return
     
 
 
