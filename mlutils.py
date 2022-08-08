@@ -1,7 +1,7 @@
 import numpy as np, random
 
-def move_to_onehot_24(move):
-    onehot_move = [0]*24
+def move_to_onehot(move, size):
+    onehot_move = [0]*size
     onehot_move[move] = 1
     return onehot_move
 

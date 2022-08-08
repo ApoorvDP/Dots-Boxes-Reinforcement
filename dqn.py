@@ -5,7 +5,7 @@ def train_DQN(epsilon_greedy_F, valid_moves_F, make_move_F, boxes_created_F, par
     Qnet = nn.FCNN(False, parameters['inputs'], parameters['network'], parameters['outputs'], parameters['use_ReLU'])
     if verbose:
         print(f'Neural network\n{Qnet}\ncreated on {Qnet.device}.')
-    outcomes, repk = np.zeros(parameters['epochs']*parameters['games_per_epoch']), -1
+    board_edge_count, outcomes, repk = parameters['inputs']//2, np.zeros(parameters['epochs']*parameters['games_per_epoch']), -1
     for epoch in range(parameters['epochs']):
         start_time = time.time()
         if epoch > 0:
@@ -17,7 +17,7 @@ def train_DQN(epsilon_greedy_F, valid_moves_F, make_move_F, boxes_created_F, par
             state, boxes, score, done = [0]*24, [0]*9, 0, False
             # Start game; player 1's turn initially
             turn, state_p = True, None # state_p tells if there is a previous state to use as sample
-            move, _ = epsilon_greedy_F(state, valid_moves_F, Qnet, Qnet_adv, epsilon, turn)
+            move, _ = epsilon_greedy_F(board_edge_count, state, valid_moves_F, Qnet, Qnet_adv, epsilon, turn)
             # Play game
             while not done:
                 if not turn: # Store agent state and move for retroactively appending to sample when turn switches back to player 1
@@ -35,10 +35,10 @@ def train_DQN(epsilon_greedy_F, valid_moves_F, make_move_F, boxes_created_F, par
                     outcomes[repk], done = 1 if score > 4 else -1, True # Store game outcome and set termination flag
                     move_next, Qnext = -1, 0 # Qnext value will be zero at end of game
                 else: # Else, determine next move and add current sample with reinforcement 0
-                    move_next, Qnext = epsilon_greedy_F(state_next, valid_moves_F, Qnet, Qnet_adv, epsilon, turn)
+                    move_next, Qnext = epsilon_greedy_F(board_edge_count, state_next, valid_moves_F, Qnet, Qnet_adv, epsilon, turn)
                 # Note to future self: The if condition below is CORRECT; Do NOT confuse it again
                 if (created > 0 and not turn) or (created == 0 and not turn and state_p is not None) or done: # Add player 2 turns and game end state
-                    samples.append([*state_p, *ml.move_to_onehot_24(move_p), r, Qnext]) # Collect not turn results as a sample
+                    samples.append([*state_p, *ml.move_to_onehot(move_p, board_edge_count), r, Qnext]) # Collect not turn results as a sample
                 state, move = state_next, move_next
         samples = np.array(samples) # Samples contains the training inputs and the targets
         X, T = samples[:, :48], samples[:, 48:49]+samples[:, 49:50] # Training inputs and target values for the neural network
@@ -48,7 +48,7 @@ def train_DQN(epsilon_greedy_F, valid_moves_F, make_move_F, boxes_created_F, par
             print(f'(Epoch: {epoch+1}, Win %: {(round(outcomes.reshape(-1, parameters["games_per_epoch"])[epoch, :].mean(), 4)+1)*100/2:.2f}, Epsilon: {epsilon:.2f}), Time taken: {time.time() - start_time:.2f}s')
     return Qnet.before_save_model(), outcomes
 
-def test_DQN(epsilon_greedy_F, valid_moves_F, make_move_F, boxes_created_F, num_tests, runs, num_games, Qnet, Qnet_adv, ep=0, verbose=False):
+def test_DQN(epsilon_greedy_F, valid_moves_F, make_move_F, boxes_created_F, board_edge_count, num_tests, runs, num_games, Qnet, Qnet_adv, ep=0, verbose=False):
     testing = []
     for i in range(num_tests):
         print(f'Testing => Test {i+1}')
@@ -58,7 +58,7 @@ def test_DQN(epsilon_greedy_F, valid_moves_F, make_move_F, boxes_created_F, num_
             for k in range(num_games):
                 state, boxes, score, done = [0]*24, [0]*9, 0, False
                 turn = True
-                move, _ = epsilon_greedy_F(state, valid_moves_F, Qnet, Qnet_adv, ep, turn)
+                move, _ = epsilon_greedy_F(board_edge_count, state, valid_moves_F, Qnet, Qnet_adv, ep, turn)
                 while not done:
                     state_next = make_move_F(state, move)
                     created, boxes = boxes_created_F(state_next, boxes)
@@ -71,7 +71,7 @@ def test_DQN(epsilon_greedy_F, valid_moves_F, make_move_F, boxes_created_F, num_
                         outcome, done = 1 if score > 4 else -1, True
                         move_next, Qnext = -1, 0
                     else:
-                        move_next, Qnext = epsilon_greedy_F(state_next, valid_moves_F, Qnet, Qnet_adv, ep, turn)
+                        move_next, Qnext = epsilon_greedy_F(board_edge_count, state_next, valid_moves_F, Qnet, Qnet_adv, ep, turn)
                     state, move = state_next, move_next
                 outcomes.append(outcome)
             percentages.append(sum(outcomes[k] == -1 for k in range(len(outcomes)))/num_games*100)

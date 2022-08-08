@@ -22,21 +22,21 @@ def get_move_heuristic(state, moves):
         move = random.choice(moves)
     return move
 
-def opponent_move(state, moves, Qnet):
+def opponent_move(board_edge_count, state, moves, Qnet):
     if Qnet is not None:
-        Qs = [Qnet.evaluate(np.array(state + ml.move_to_onehot_24(m)))[0] if Qnet.processed is True else 0 for m in moves] # Q values for Qnet_adv
+        Qs = [Qnet.evaluate(np.array(state + ml.move_to_onehot(m, board_edge_count)))[0] if Qnet.processed is True else 0 for m in moves] # Q values for Qnet_adv
         move = moves[np.argmax(Qs)]
     else:
         move = get_move_heuristic(state, moves)
     return move
 
-def epsilon_greedy(state, valid_moves_F, Qnet, Qnet_adv, epsilon, turn):
+def epsilon_greedy(board_edge_count, state, valid_moves_F, Qnet, Qnet_adv, epsilon, turn):
     moves = valid_moves_F(state)
-    Qs = [Qnet.evaluate(np.array(state + ml.move_to_onehot_24(m)))[0] if Qnet.processed is True else 0 for m in moves] # Q values for Qnet
+    Qs = [Qnet.evaluate(np.array(state + ml.move_to_onehot(m, board_edge_count)))[0] if Qnet.processed is True else 0 for m in moves] # Q values for Qnet
     if np.random.uniform() < epsilon: # Random move
-        move = moves[random.sample(range(len(moves)), 1)[0]] if not turn else opponent_move(state, moves, Qnet_adv)
+        move = moves[random.sample(range(len(moves)), 1)[0]] if not turn else opponent_move(board_edge_count, state, moves, Qnet_adv)
     else: # Greedy move
-        move = moves[np.argmax(Qs)] if not turn else opponent_move(state, moves, Qnet_adv)
+        move = moves[np.argmax(Qs)] if not turn else opponent_move(board_edge_count, state, moves, Qnet_adv)
     return move, np.argmax(Qs) if not turn else 0 # 0 because don't care about opponent's Q value prediction
 
 def compute_results(epochs, outcomes, bin_size):
@@ -136,7 +136,7 @@ if __name__ == "__main__":
                         Qnet_best = pickle.load(f).after_load_model()
                     except EOFError:
                         break
-            testing_results = dqn.test_DQN(epsilon_greedy, g.valid_moves, g.make_move, g.box_created, num_tests, runs, num_games, Qnet_best, Qnet_adv, verbose=True)
+            testing_results = dqn.test_DQN((4*(2*config['board']*(config['board']-1)))//2, epsilon_greedy, g.valid_moves, g.make_move, g.box_created, num_tests, runs, num_games, Qnet_best, Qnet_adv, verbose=True) # board_edge_count is half of parameter['inputs']
             plot_testing(results_path, testing_results)
     
     # Play
